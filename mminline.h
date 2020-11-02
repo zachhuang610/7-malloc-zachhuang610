@@ -112,7 +112,7 @@ static inline block_t *payload_to_block(void *payload) {
 // given the input block 'b', returns b's flink, which points to the
 // next block in the free list
 // NOTE: if 'b' is free, b->payload[0] contains b's flink
-static inline block_t *block_get_flink(block_t *b) {
+static inline block_t *block_flink(block_t *b) {
   assert(!block_allocated(b));
   return (block_t *)b->payload[0];
 }
@@ -127,7 +127,7 @@ static inline void block_set_flink(block_t *b, block_t *new_flink) {
 // given the input block 'b', returns b's blink, which points to the
 // previous block in the free list
 // NOTE: if 'b' is free, b->payload[1] contains b's blink
-static inline block_t *block_get_blink(block_t *b) {
+static inline block_t *block_blink(block_t *b) {
   assert(!block_allocated(b));
   return (block_t *)b->payload[1];
 }
@@ -143,20 +143,20 @@ static inline void block_set_blink(block_t *b, block_t *new_blink) {
 static inline void pull_free_block(block_t *fb) {
   assert(!block_allocated(fb));
   if (flist_first == fb) {
-    if ((flist_first = block_get_flink(fb)) == fb) {
+    if ((flist_first = block_flink(fb)) == fb) {
       flist_first = NULL;
       return;
     }
   }
-  block_set_flink(block_get_blink(fb), block_get_flink(fb));
-  block_set_blink(block_get_flink(fb), block_get_blink(fb));
+  block_set_flink(block_blink(fb), block_flink(fb));
+  block_set_blink(block_flink(fb), block_blink(fb));
 }
 
 // insert block into the (circularly doubly linked) free list
 static inline void insert_free_block(block_t *fb) {
   assert(!block_allocated(fb));
   if (flist_first != NULL) {
-    block_t *last = block_get_blink(flist_first);
+    block_t *last = block_blink(flist_first);
     // put 'fb' in between 'flist_first' and 'last'
     block_set_flink(fb, flist_first);
     block_set_blink(fb, last);

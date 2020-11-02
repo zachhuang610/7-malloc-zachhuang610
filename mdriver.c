@@ -1181,7 +1181,7 @@ void mm_print_heap_repl(repl_block_t blocks[], int repl_size) {
         } else {
             printf("free block \t\tblock at %p \tsize %d \tNext: %p\n",
                    (void *)(b), (int)block_size(b),
-                   (void *)(block_get_flink(b)));
+                   (void *)(block_flink(b)));
         }
         size_t s1 = block_size(b);
         size_t s2 = block_end_size(b);
