@@ -23,12 +23,13 @@ void *mm_realloc(void *ptr, size_t size);
 
 typedef struct block {
   size_t size;
+  // size field represents the size of the block
   // size is assumed to be a multiple of 8. The least-significant bit is
   // overloaded:
   //     if 0 the block is free
   //     if 1 the block is allocated
   size_t payload[];
-  // the actual size of payload is given in the size field
+
   // for free blocks:
   //     payload[0] is the block's flink (points to the next block in the free list);
   //     payload[1] is the block's blink (points to the previous block in the free list)
