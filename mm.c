@@ -20,7 +20,7 @@
 #include "./mm.h"
 #include "./mminline.h"
 
-#define EXTENSION (2 * MINBLOCKSIZE)
+#define EXTENSION (16 * MINBLOCKSIZE)
 static block_t* flist_first;
 block_t *prol;
 block_t *epil;
@@ -55,21 +55,59 @@ int mm_init(void) {
   return 0;
 }
 
-static inline block_t *extend_heap() {
-  void* j = mem_sbrk(EXTENSION);
-  if (j == (void *) -1) {
+static inline void coalesce(block_t *fb) {
+  size_t s = block_size(fb);
+  block_t *b = fb;
+  pull_free_block(fb);
+
+  while(block_prev_allocated(b) == 0) {
+    b = block_prev(b);
+    s += block_size(b);
+    pull_free_block(b);
+  }
+
+  block_t *f = fb;
+  while(block_next_allocated(f) == 0) {
+    f = block_next(f);
+    s += block_size(f);
+    pull_free_block(f);
+  }
+
+  block_set_size_and_allocated(b, s, 0);
+  insert_free_block(b);
+}
+
+/*
+function for extending heap by EXTENSION number of bytes.
+*/
+static inline block_t *extend_heap(size_t size) {
+  size_t s;
+  if (EXTENSION >= size) {
+    s = EXTENSION;
+  } else {
+    s = size;
+  }
+  void* err = mem_sbrk(s);
+  if (err == (void *) -1) {
     return NULL;
   }
-  block_set_size_and_allocated(epil, EXTENSION, 0);
-  j = epil;
-  insert_free_block(j);
+  block_set_size_and_allocated(epil, s, 0);
+  insert_free_block(epil);
   epil = block_next(epil);
   block_set_size_and_allocated(epil, TAGS_SIZE, 1);
+  coalesce(block_prev(epil));
   return epil;
 }
 
-static inline int isbig(block_t *fb, size_t size) {
-  size_t bs = block_size(fb);
+
+
+/*
+function for checking if the block size is big enough for the
+requested block size.
+returns -1 if block is too small, 0 if all of block must be allocated
+and 1 if only a portion of the block must be allocated. 
+*/
+static inline int isbig(size_t bs, size_t size) {
   if (bs >= size) {
     if (bs >= (size+MINBLOCKSIZE)) {
       return 1;
@@ -83,10 +121,9 @@ static inline block_t *search(size_t size) {
   block_t *fb = flist_first;
   size_t leftover;
   block_t *adjacent;
-
   do
   {
-    int j = isbig(fb, size);
+    int j = isbig(block_size(fb), size);
 
     if (j > -1) {
       if (j == 1) {
@@ -124,39 +161,34 @@ static inline block_t *search(size_t size) {
  */
 void *mm_malloc(size_t size) {
   // TODO
-  block_t *p;
-  size_t s = size+TAGS_SIZE;
+  block_t *err;
+  size_t s = align(size)+TAGS_SIZE;
   if (size == 0) {
     return NULL;
   } else {
       if (flist_first == NULL) {
-        p = extend_heap();
-        if (p == NULL) {
+        err = extend_heap(s);
+        if (err == NULL) {
           return NULL;
         }
       }
       
       if (s < MINBLOCKSIZE) {
         s = MINBLOCKSIZE;
-      } else {
-        s = align(s);
       }
+
       block_t* fb = search(s);
-      if (fb == NULL) {
-        p = extend_heap();
-        if (p == NULL) {
+      while (fb == NULL) {
+        err = extend_heap(s);
+        if (err == NULL) {
           return NULL;
         }
         fb = search(s);
       }
-      block_t *payload = payload_to_block(fb);
-      fprintf(stderr, "payload address: %lx\n", (long unsigned) payload);
-      return payload;
+      return fb->payload;
   }
   return NULL;
 }
-
-
 
 /*                              __
  *     _ __ ___  _ __ ___      / _|_ __ ___  ___
@@ -171,7 +203,10 @@ void *mm_malloc(size_t size) {
  */
 void mm_free(void *ptr) {
   // TODO
-  ptr = ptr;
+  block_t *b = payload_to_block(ptr);
+  block_set_allocated(b, 0);
+  insert_free_block(b);
+  coalesce(b);
 }
 
 /*
@@ -189,7 +224,74 @@ void mm_free(void *ptr) {
  */
 void *mm_realloc(void *ptr, size_t size) {
   // TODO
-  ptr = ptr;
-  size = size;
+  if (ptr == NULL) {
+    return mm_malloc(size);
+  }
+  if (size == 0) {
+    mm_free(ptr);
+    return NULL;
+  }
+  
+  block_t *ab = payload_to_block(ptr);
+  size = align(size);
+  size_t block_s = size+TAGS_SIZE;
+
+  if (block_s < MINBLOCKSIZE) {
+    block_s = MINBLOCKSIZE;
+  }
+  size_t max_s = block_s;
+  block_t *b = ab;
+  block_t *f = ab;
+  //gets the amount of free space adjacent to and including the
+  //  block to be realloc'd
+  if (block_prev_allocated(ab) == 0) {
+    max_s += block_prev_size(ab);
+    b = block_prev(ab);
+  }
+  if (block_next_allocated(ab) == 0) {
+    max_s += block_next_size(ab);
+    f = block_next(ab);
+  }
+
+  //checks to see if free space can fit realloc size
+  int j = isbig(max_s, size);
+  if (j==1) {
+    // max local size can be split
+    if (b != ab) {
+      // a free block exists before the block
+      pull_free_block(b);
+      // remove so we don't overcount in flist
+    }
+    //set block of new spot
+    block_set_size_and_allocated(b, block_s, 1);
+
+    //move memory, possible overlap
+    memmove((b->payload), ptr, size);
+
+    // account for valid leftover space
+    block_t *adjacent = block_next(b);
+    size_t leftover = max_s - block_s;
+    block_set_size_and_allocated(adjacent, leftover, 0);
+    coalesce(adjacent);
+    return (b->payload);
+  } else if (j==0) {
+    // max local size can fit but cannot be split
+    if (b != ab) {
+      pull_free_block(b);
+    }
+    if (f != ab) {
+      pull_free_block(f);
+    }
+    memmove((b->payload), ptr, (block_size(ab)-TAGS_SIZE));
+    block_set_size_and_allocated(b, max_s, 1);
+    return (b->payload);
+
+  } else if (j==-1) {
+    // max local size cannot fit block
+    block_t *fb = mm_malloc(size);
+    memcpy((fb->payload), ptr, (block_size(ab)-TAGS_SIZE));
+    mm_free(ptr);
+    return (fb->payload);
+  }
   return NULL;
 }
