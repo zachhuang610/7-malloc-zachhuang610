@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -Werror -Wunused -O2 -Wpointer-arith -Wpedantic -g -std=g
 
 # to add tracefiles, add filenames or other macros separated by commas,
 # e.g. BASE_TRACEFILES,COALESCE_TRACEFILES,my_test_trace.rep
-TRACEFILES = BASE_TRACEFILES ,COALESCE_TRACEFILES#, REALLOC_TRACEFILES
+TRACEFILES = BASE_TRACEFILES ,COALESCE_TRACEFILES, REALLOC_TRACEFILES
 
 
 OBJS = mdriver.o memlib.o fsecs.o fcyc.o clock.o ftimer.o

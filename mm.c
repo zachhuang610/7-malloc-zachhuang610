@@ -79,7 +79,6 @@ static inline void coalesce(block_t *fb) {
 /*
 function for extending heap by EXTENSION number of bytes.
 */
-
 static inline block_t *extend_heap(size_t size) {
     size_t s;
     if (EXTENSION >= size) {
@@ -227,18 +226,26 @@ void *mm_realloc(void *ptr, size_t size) {
         return NULL;
     }
 
+
+
+
     block_t *ab = payload_to_block(ptr);
     size = align(size);
     size_t block_s = size + TAGS_SIZE;
 
-    if (block_s < MINBLOCKSIZE) {
+    if (block_s <= MINBLOCKSIZE) {
         block_s = MINBLOCKSIZE;
     }
 
-    if (block_s < block_size(ab)) {
+    if (block_s <= block_size(ab)) {
         return ptr;
     }
+    /*
 
+    AN ATTEMPT AT OPTIMIZED REALLOC BELOW
+
+
+    */
     size_t max_s = block_s;
     block_t *b = ab;
     block_t *f = ab;
@@ -252,46 +259,53 @@ void *mm_realloc(void *ptr, size_t size) {
         max_s += block_next_size(ab);
         f = block_next(ab);
     }
-
-    // checks to see if free space can fit realloc size
+    
+    // checks to see if local free space can fit realloc size
     int j = isbig(max_s, size);
-    if (j == 1) {
-        // max local size can be split
-        if (b != ab) {
-            // a free block exists before the block
-            pull_free_block(b);
-            // remove so we don't overcount in flist
-        }
-        // set block of new spot
-        block_set_size_and_allocated(b, block_s, 1);
-
-        // move memory, possible overlap
-        memmove((b->payload), ptr, size);
-
-        // account for valid leftover space
-        block_t *adjacent = block_next(b);
-        size_t leftover = max_s - block_s;
-        block_set_size_and_allocated(adjacent, leftover, 0);
-        coalesce(adjacent);
-        return (b->payload);
+    if (j == -1) {
+      // requested realloc size too big for current spot, must relocate entirely
+      block_t *fb = mm_malloc(size);
+      memcpy((fb->payload),ptr, size);
+      mm_free(ptr);
     } else if (j == 0) {
-        // max local size can fit but cannot be split
-        if (b != ab) {
-            pull_free_block(b);
+      // requested realloc size must take all of the current free space and
+      // all neighboring free space
+      if (b != ab) {
+        // checks to see if block pointer moved
+        // if so, we need to remove the free block out of flist
+        pull_free_block(b);
+      }
+      if (f != ab) {
+        // also checks to see if block pointer was moved
+        pull_free_block(f);
+      }
+      block_set_size_and_allocated(b, max_s, 1);
+      memmove((b->payload), ptr, size);
+      return (b->payload);
+    } else if (j==1) {
+      //requested realloc size can fit into (current space + neighboring free space)
+      //and will have some splitting.
+      size_t leftover = 0;
+      if (f != ab) {
+        pull_free_block(f);
+      }
+      if (b != ab) {
+        if (block_s > (block_size(f)+block_size(ab)+MINBLOCKSIZE)) {
+          // block must extend into higher (more prev) block
+          pull_free_block(b);
+          leftover = max_s - block_s;
+        } else {
+          b = ab;
+          leftover = (block_size(ab)+block_size(f))-block_s;
         }
-        if (f != ab) {
-            pull_free_block(f);
-        }
-        memmove((b->payload), ptr, (block_size(ab) - TAGS_SIZE));
-        block_set_size_and_allocated(b, max_s, 1);
-        return (b->payload);
-
-    } else if (j == -1) {
-        // max local size cannot fit block
-        block_t *fb = mm_malloc(size);
-        memcpy((fb->payload), ptr, (block_size(ab) - TAGS_SIZE));
-        mm_free(ptr);
-        return (fb->payload);
+      }
+      // from the highest block to be modified, increment down to get to destination
+      block_t *fb = b + (leftover/ALIGNMENT);
+      memmove((fb->payload), ptr, (block_size(ab)));
+      block_set_size_and_allocated(fb, block_s, 1);
+      block_set_size_and_allocated(b, leftover, 0);
+      coalesce(b);
+      return (fb->payload);
     }
     return NULL;
 }
