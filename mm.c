@@ -59,14 +59,14 @@ static inline void coalesce(block_t *fb) {
     size_t s = block_size(fb);
     block_t *b = fb;
 
-    while (block_prev_allocated(b) == 0) {
+    if (block_prev_allocated(b) == 0) {
         b = block_prev(b);
         s += block_size(b);
         pull_free_block(b);
     }
 
     block_t *f = fb;
-    while (block_next_allocated(f) == 0) {
+    if (block_next_allocated(f) == 0) {
         f = block_next(f);
         s += block_size(f);
         pull_free_block(f);
@@ -79,6 +79,7 @@ static inline void coalesce(block_t *fb) {
 /*
 function for extending heap by EXTENSION number of bytes.
 */
+
 static inline block_t *extend_heap(size_t size) {
     size_t s;
     if (EXTENSION >= size) {
