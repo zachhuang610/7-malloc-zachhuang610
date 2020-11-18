@@ -57,7 +57,8 @@ int mm_init(void) {
 }
 
 /*
-coalesce function, takes in a free block.
+coalesce function, takes in a free block and checks neighbors if their free.
+If so, merges by manipulating block sizes and puts the new block into the list.
 */
 static inline void coalesce(block_t *fb) {
     size_t s = block_size(fb);
