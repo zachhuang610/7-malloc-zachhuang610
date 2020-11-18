@@ -57,8 +57,8 @@ int mm_init(void) {
 
 static inline void coalesce(block_t *fb) {
     size_t s = block_size(fb);
-    block_t *b = fb;
 
+    block_t *b = fb;
     if (block_prev_allocated(b) == 0) {
         b = block_prev(b);
         s += block_size(b);
@@ -119,7 +119,6 @@ static inline block_t *search(size_t size) {
     block_t *adjacent;
     do {
         int j = isbig(block_size(fb), size);
-
         if (j > -1) {
             if (j == 1) {
                 //  ^^ free block has leftover space > MINBLOCKSPACE
@@ -180,7 +179,7 @@ void *mm_malloc(size_t size) {
             }
             fb = search(s);
         }
-        return fb->payload;
+        return (fb->payload);
     }
     return NULL;
 }
@@ -217,17 +216,13 @@ void mm_free(void *ptr) {
  * returns: a pointer to the new memory block's payload
  */
 void *mm_realloc(void *ptr, size_t size) {
-    // TODO
-    if (ptr == NULL) {
-        return mm_malloc(size);
-    }
     if (size == 0) {
         mm_free(ptr);
         return NULL;
     }
-
-
-
+    if (ptr == NULL) {
+        return mm_malloc(size);
+    }
 
     block_t *ab = payload_to_block(ptr);
     size = align(size);
@@ -236,21 +231,21 @@ void *mm_realloc(void *ptr, size_t size) {
     if (block_s <= MINBLOCKSIZE) {
         block_s = MINBLOCKSIZE;
     }
-
+    
     if (block_s <= block_size(ab)) {
-        return ptr;
+        if (isbig(block_size(ab), block_s) == 1) {
+            size_t leftover = block_size(ab) - block_s;
+            block_set_size_and_allocated(ab, block_s, 1);
+            block_t *next = block_next(ab);
+            block_set_size_and_allocated(next, leftover, 0);
+            mm_free((next->payload));
+            return ptr;
+        }
     }
-    /*
 
-    AN ATTEMPT AT OPTIMIZED REALLOC BELOW
-
-
-    */
-    size_t max_s = block_s;
+    size_t max_s = block_size(ab);
     block_t *b = ab;
     block_t *f = ab;
-    // gets the amount of free space adjacent to and including the
-    //  block to be realloc'd
     if (block_prev_allocated(ab) == 0) {
         max_s += block_prev_size(ab);
         b = block_prev(ab);
@@ -259,53 +254,62 @@ void *mm_realloc(void *ptr, size_t size) {
         max_s += block_next_size(ab);
         f = block_next(ab);
     }
-    
+
     // checks to see if local free space can fit realloc size
-    int j = isbig(max_s, size);
+    int j = isbig(max_s, block_s);
     if (j == -1) {
-      // requested realloc size too big for current spot, must relocate entirely
-      block_t *fb = mm_malloc(size);
-      memcpy((fb->payload),ptr, size);
-      mm_free(ptr);
+        // requested realloc size too big for current spot, must relocate
+        block_t *fb = mm_malloc(size);
+        memcpy(fb, ptr, (block_size(ab) - TAGS_SIZE));
+        mm_free(ptr);
+        return fb;
     } else if (j == 0) {
-      // requested realloc size must take all of the current free space and
-      // all neighboring free space
-      if (b != ab) {
-        // checks to see if block pointer moved
-        // if so, we need to remove the free block out of flist
-        pull_free_block(b);
-      }
-      if (f != ab) {
-        // also checks to see if block pointer was moved
-        pull_free_block(f);
-      }
-      block_set_size_and_allocated(b, max_s, 1);
-      memmove((b->payload), ptr, size);
-      return (b->payload);
-    } else if (j==1) {
-      //requested realloc size can fit into (current space + neighboring free space)
-      //and will have some splitting.
-      size_t leftover = 0;
-      if (f != ab) {
-        pull_free_block(f);
-      }
-      if (b != ab) {
-        if (block_s > (block_size(f)+block_size(ab)+MINBLOCKSIZE)) {
-          // block must extend into higher (more prev) block
-          pull_free_block(b);
-          leftover = max_s - block_s;
-        } else {
-          b = ab;
-          leftover = (block_size(ab)+block_size(f))-block_s;
+        // requested realloc size needs all of the space
+        if (b != ab) {
+            pull_free_block(b);
         }
-      }
-      // from the highest block to be modified, increment down to get to destination
-      block_t *fb = b + (leftover/ALIGNMENT);
-      memmove((fb->payload), ptr, (block_size(ab)));
-      block_set_size_and_allocated(fb, block_s, 1);
-      block_set_size_and_allocated(b, leftover, 0);
-      coalesce(b);
-      return (fb->payload);
+        if (f != ab) {
+            pull_free_block(f);
+        }
+        block_set_size_and_allocated(b, max_s, 1);
+        memmove((b->payload), ptr, (block_size(ab) - TAGS_SIZE));
+        return (b->payload);
+    } else if (j == 1) {
+        // fits with splitting on leftover
+        if (f != ab) {
+            pull_free_block(f);
+            size_t lower_two = block_size(f) + block_size(ab);
+            int k = isbig(lower_two, block_s);
+            if (k == 1) {
+                size_t leftover = lower_two - block_s;
+                block_set_size(ab, block_s);
+                block_set_size_and_allocated(block_next(ab), leftover, 0);
+                coalesce(block_next(ab));
+                return ptr;
+            } else if (k == 0) {
+                block_set_size(ab, lower_two);
+                return ptr;
+            } else if (k == -1) {
+                if (b != ab) {
+                    size_t leftover = max_s - block_s;
+                    block_set_size_and_allocated(b, leftover, 0);
+                    block_t *newblock = block_next(b);
+                    memmove((newblock->payload), ptr,
+                            (block_size(ab) - TAGS_SIZE));
+                    block_set_size_and_allocated(newblock, block_s, 1);
+                    coalesce(b);
+                    return (newblock->payload);
+                }
+            }
+        } else if (b != ab) {
+            size_t payload_size = block_size(ab) - TAGS_SIZE;
+            size_t payload_buffer[payload_size];
+            memcpy(payload_buffer, ptr, payload_size);
+            mm_free(ptr);
+            block_t *newblock = mm_malloc(size);
+            memcpy(newblock, payload_buffer, payload_size);
+            return newblock;
+        }
     }
     return NULL;
 }
