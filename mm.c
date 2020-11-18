@@ -20,10 +20,11 @@
 #include "./mm.h"
 #include "./mminline.h"
 
-#define EXTENSION (16 * MINBLOCKSIZE)
+#define EXTENSION (32 * MINBLOCKSIZE)
 static block_t *flist_first;
 block_t *prol;
 block_t *epil;
+#define THRESHOLD (2 * MINBLOCKSIZE)
 
 // rounds up to the nearest multiple of WORD_SIZE
 static inline size_t align(size_t size) {
@@ -55,6 +56,9 @@ int mm_init(void) {
     return 0;
 }
 
+/*
+coalesce function, takes in a free block.
+*/
 static inline void coalesce(block_t *fb) {
     size_t s = block_size(fb);
 
@@ -77,7 +81,7 @@ static inline void coalesce(block_t *fb) {
 }
 
 /*
-function for extending heap by EXTENSION number of bytes.
+function for extending heap by EXTENSION number of bytes or by size_t size bytes, whichever is larger.
 */
 static inline block_t *extend_heap(size_t size) {
     size_t s;
@@ -105,7 +109,7 @@ and 1 if only a portion of the block must be allocated.
 */
 static inline int isbig(size_t bs, size_t size) {
     if (bs >= size) {
-        if (bs >= (size + MINBLOCKSIZE)) {
+        if (bs >= (size + THRESHOLD)) {
             return 1;
         }
         return 0;
@@ -113,6 +117,10 @@ static inline int isbig(size_t bs, size_t size) {
     return -1;
 }
 
+/*
+search: a function for looking through flist to identify a free block.
+returns pointer to free block of sufficient size, NULL otherwise.
+*/
 static inline block_t *search(size_t size) {
     block_t *fb = flist_first;
     size_t leftover;
@@ -231,7 +239,7 @@ void *mm_realloc(void *ptr, size_t size) {
     if (block_s <= MINBLOCKSIZE) {
         block_s = MINBLOCKSIZE;
     }
-    
+
     if (block_s <= block_size(ab)) {
         if (isbig(block_size(ab), block_s) == 1) {
             size_t leftover = block_size(ab) - block_s;
@@ -241,75 +249,64 @@ void *mm_realloc(void *ptr, size_t size) {
             mm_free((next->payload));
             return ptr;
         }
+        return ptr;
     }
 
     size_t max_s = block_size(ab);
-    block_t *b = ab;
-    block_t *f = ab;
+
+    block_t *prev = ab;
     if (block_prev_allocated(ab) == 0) {
-        max_s += block_prev_size(ab);
-        b = block_prev(ab);
+        prev = block_prev(ab);
     }
+    block_t *next = ab;
     if (block_next_allocated(ab) == 0) {
         max_s += block_next_size(ab);
-        f = block_next(ab);
+        next = block_next(ab);
     }
-
-    // checks to see if local free space can fit realloc size
+    // checks to see if nearby free space can fit realloc size
     int j = isbig(max_s, block_s);
     if (j == -1) {
-        // requested realloc size too big for current spot, must relocate
+        size_t payload_size = block_size(ab) - TAGS_SIZE;
+        if (prev != ab) {
+            size_t total_size = block_size(prev) + max_s;
+            if (total_size >= block_s) {
+                if (next != ab) {
+                    pull_free_block(next);
+                }
+                if (total_size >= (block_s + THRESHOLD)) {
+                    size_t leftover = total_size - block_s;
+                    block_set_size(prev, leftover);
+                    block_t *newblock = block_next(prev);
+                    memmove((newblock->payload), ptr, payload_size);
+                    block_set_size_and_allocated(newblock, block_s, 1);
+                    return (newblock->payload);
+                }
+                pull_free_block(prev);
+                memmove((prev->payload), ptr, payload_size);
+                block_set_size_and_allocated(prev, total_size, 1);
+                return (prev->payload);
+            }
+        }
         block_t *fb = mm_malloc(size);
-        memcpy(fb, ptr, (block_size(ab) - TAGS_SIZE));
+        memcpy(fb, ptr, payload_size);
         mm_free(ptr);
         return fb;
     } else if (j == 0) {
         // requested realloc size needs all of the space
-        if (b != ab) {
-            pull_free_block(b);
+        if (next != ab) {
+            pull_free_block(next);
         }
-        if (f != ab) {
-            pull_free_block(f);
-        }
-        block_set_size_and_allocated(b, max_s, 1);
-        memmove((b->payload), ptr, (block_size(ab) - TAGS_SIZE));
-        return (b->payload);
+        block_set_size_and_allocated(ab, max_s, 1);
+        return ptr;
     } else if (j == 1) {
         // fits with splitting on leftover
-        if (f != ab) {
-            pull_free_block(f);
-            size_t lower_two = block_size(f) + block_size(ab);
-            int k = isbig(lower_two, block_s);
-            if (k == 1) {
-                size_t leftover = lower_two - block_s;
-                block_set_size(ab, block_s);
-                block_set_size_and_allocated(block_next(ab), leftover, 0);
-                coalesce(block_next(ab));
-                return ptr;
-            } else if (k == 0) {
-                block_set_size(ab, lower_two);
-                return ptr;
-            } else if (k == -1) {
-                if (b != ab) {
-                    size_t leftover = max_s - block_s;
-                    block_set_size_and_allocated(b, leftover, 0);
-                    block_t *newblock = block_next(b);
-                    memmove((newblock->payload), ptr,
-                            (block_size(ab) - TAGS_SIZE));
-                    block_set_size_and_allocated(newblock, block_s, 1);
-                    coalesce(b);
-                    return (newblock->payload);
-                }
-            }
-        } else if (b != ab) {
-            size_t payload_size = block_size(ab) - TAGS_SIZE;
-            size_t payload_buffer[payload_size];
-            memcpy(payload_buffer, ptr, payload_size);
-            mm_free(ptr);
-            block_t *newblock = mm_malloc(size);
-            memcpy(newblock, payload_buffer, payload_size);
-            return newblock;
-        }
+        pull_free_block(next);
+        size_t leftover = max_s - block_s;
+        block_set_size(ab, block_s);
+        block_t *adjacent = block_next(ab);
+        block_set_size_and_allocated(adjacent, leftover, 0);
+        coalesce(adjacent);
+        return ptr;
     }
     return NULL;
 }

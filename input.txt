@@ -1,3 +1,148 @@
-malloc 0 240
-realloc 0 0
-malloc 1 300
+malloc 0 512
+malloc 1 128
+realloc 0 640
+malloc 2 128
+free 1
+realloc 0 768
+malloc 3 128
+free 2
+realloc 0 896
+malloc 4 128
+free 3
+realloc 0 1024
+malloc 5 128
+free 4
+realloc 0 1152
+malloc 6 128
+free 5
+realloc 0 1280
+malloc 7 128
+free 6
+realloc 0 1408
+malloc 8 128
+free 7
+realloc 0 1536
+malloc 9 128
+free 8
+realloc 0 1664
+malloc 10 128
+free 9
+realloc 0 1792
+malloc 11 128
+free 10
+realloc 0 1920
+malloc 12 128
+free 11
+realloc 0 2048
+malloc 13 128
+free 12
+realloc 0 2176
+malloc 14 128
+free 13
+realloc 0 2304
+malloc 15 128
+free 14
+realloc 0 2432
+malloc 16 128
+free 15
+realloc 0 2560
+malloc 17 128
+free 16
+realloc 0 2688
+malloc 18 128
+free 17
+realloc 0 2816
+malloc 19 128
+free 18
+realloc 0 2944
+malloc 20 128
+free 19
+realloc 0 3072
+malloc 21 128
+free 20
+realloc 0 3200
+malloc 22 128
+free 21
+realloc 0 3328
+malloc 23 128
+free 22
+realloc 0 3456
+malloc 24 128
+free 23
+realloc 0 3584
+malloc 25 128
+free 24
+realloc 0 3712
+malloc 26 128
+free 25
+realloc 0 3840
+malloc 27 128
+free 26
+realloc 0 3968
+malloc 28 128
+free 27
+realloc 0 4096
+malloc 29 128
+free 28
+realloc 0 4224
+malloc 30 128
+free 29
+realloc 0 4352
+malloc 31 128
+free 30
+realloc 0 4480
+malloc 32 128
+free 31
+realloc 0 4608
+malloc 33 128
+free 32
+realloc 0 4736
+malloc 34 128
+free 33
+realloc 0 4864
+malloc 35 128
+free 34
+realloc 0 4992
+malloc 36 128
+free 35
+realloc 0 5120
+malloc 37 128
+free 36
+realloc 0 5248
+malloc 38 128
+free 37
+realloc 0 5376
+malloc 39 128
+free 38
+realloc 0 5504
+malloc 40 128
+free 39
+realloc 0 5632
+malloc 41 128
+free 40
+realloc 0 5760
+malloc 42 128
+free 41
+realloc 0 5888
+malloc 43 128
+free 42
+realloc 0 6016
+malloc 44 128
+free 43
+realloc 0 6144
+malloc 45 128
+free 44
+realloc 0 6272
+malloc 46 128
+free 45
+realloc 0 6400
+malloc 47 128
+free 46
+realloc 0 6528
+malloc 48 128
+free 47
+realloc 0 6656
+malloc 49 128
+free 48
+print
+realloc 0 6784
